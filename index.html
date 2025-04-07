@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>菜單拍照上傳系統</title>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        #video {
+            width: 100%;
+            max-width: 640px;
+            margin-bottom: 20px;
+        }
+        #canvas {
+            display: none;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 10px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            min-height: 100px;
+        }
+    </style>
+</head>
+<body>
+    <h1>菜單拍照上傳系統</h1>
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas"></canvas>
+    <div>
+        <button id="captureBtn">拍照</button>
+        <button id="uploadBtn" disabled>上傳至訂便當</button>
+    </div>
+    <div id="result">
+        <p>辨識結果將顯示在這裡...</p>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const captureBtn = document.getElementById('captureBtn');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const result = document.getElementById('result');
+        const ctx = canvas.getContext('2d');
+
+        // 啟動相機
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'environment' }
+                });
+                video.srcObject = stream;
+            } catch (err) {
+                console.error('無法存取相機:', err);
+                alert('無法存取相機，請確認權限設定');
+            }
+        }
+
+        // 拍照
+        captureBtn.addEventListener('click', async () => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0);
+            
+            const imageData = canvas.toDataURL('image/png');
+            result.innerHTML = '正在辨識文字，請稍候...';
+            
+            try {
+                const { data: { text } } = await Tesseract.recognize(
+                    imageData,
+                    'chi_tra',
+                    { logger: m => console.log(m) }
+                );
+                
+                result.innerHTML = `辨識結果：<pre>${text}</pre>`;
+                uploadBtn.disabled = false;
+            } catch (err) {
+                console.error('OCR 辨識失敗:', err);
+                result.innerHTML = '文字辨識失敗，請重試';
+            }
+        });
+
+        // 上傳至訂便當網站
+        uploadBtn.addEventListener('click', () => {
+            const recognizedText = result.querySelector('pre').textContent;
+            const dinbendonUrl = 'https://dinbendon.net/do/?wicket%3Ainterface=%3A6%3A%3A';
+            
+            // 開啟新分頁並將辨識文字複製到剪貼簿
+            navigator.clipboard.writeText(recognizedText)
+                .then(() => {
+                    window.open(dinbendonUrl, '_blank');
+                    alert('文字已複製到剪貼簿，請在訂便當網站中貼上');
+                })
+                .catch(err => {
+                    console.error('無法複製文字:', err);
+                    alert('複製文字失敗，請手動複製');
+                });
+        });
+
+        // 啟動應用
+        startCamera();
+    </script>
+</body>
+</html> 
