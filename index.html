@@ -172,12 +172,36 @@
         // 上傳至訂便當網站
         uploadBtn.addEventListener('click', () => {
             const recognizedText = result.querySelector('pre').textContent;
-            const dinbendonUrl = 'https://dinbendon.net/do/?wicket%3Ainterface=%3A6%3A%3A';
+            const loginUrl = 'https://dinbendon.net/do/login';
+            const steps = `
+                <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin-top: 15px;">
+                    <h3>請依照以下步驟操作：</h3>
+                    <ol>
+                        <li>已將菜單內容複製到剪貼簿</li>
+                        <li>請先<a href="${loginUrl}" target="_blank">登入訂便當網站</a>
+                            <ul>
+                                <li>帳號：IliTouch</li>
+                                <li>密碼：Ili123</li>
+                                <li>請記得填寫加法驗證問題</li>
+                            </ul>
+                        </li>
+                        <li>登入後點選右上角的「管理中心」</li>
+                        <li>在管理中心畫面中，點選「新增店家」</li>
+                        <li>填寫店家名稱</li>
+                        <li>在「產品」欄位中貼上剛才複製的菜單內容</li>
+                        <li>檢查並調整格式是否符合規定：
+                            <ul>
+                                <li>一般品項：品名, 價格</li>
+                                <li>分類標題：{分類名稱}</li>
+                                <li>多選項品項：品名, 選項1 價格1, 選項2 價格2</li>
+                            </ul>
+                        </li>
+                    </ol>
+                </div>`;
             
             navigator.clipboard.writeText(recognizedText)
                 .then(() => {
-                    window.open(dinbendonUrl, '_blank');
-                    alert('文字已複製到剪貼簿，請在訂便當網站中貼上');
+                    result.innerHTML += steps;
                 })
                 .catch(err => {
                     console.error('無法複製文字:', err);
