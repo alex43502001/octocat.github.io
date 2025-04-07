@@ -20,6 +20,11 @@
         #canvas {
             display: none;
         }
+        #preview {
+            max-width: 100%;
+            margin: 10px 0;
+            display: none;
+        }
         button {
             padding: 10px 20px;
             margin: 10px;
@@ -32,15 +37,29 @@
             border: 1px solid #ccc;
             min-height: 100px;
         }
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 10px 0;
+        }
+        .loading.active {
+            display: block;
+        }
     </style>
 </head>
 <body>
     <h1>菜單拍照上傳系統</h1>
     <video id="video" autoplay playsinline></video>
     <canvas id="canvas"></canvas>
+    <img id="preview" alt="預覽圖">
     <div>
         <button id="captureBtn">拍照</button>
+        <button id="retakeBtn" style="display: none;">重新拍攝</button>
         <button id="uploadBtn" disabled>上傳至訂便當</button>
+    </div>
+    <div class="loading" id="loading">
+        <p>正在進行文字辨識，請稍候...</p>
+        <p>第一次使用可能需要下載語言模型，請耐心等待</p>
     </div>
     <div id="result">
         <p>辨識結果將顯示在這裡...</p>
@@ -49,16 +68,23 @@
     <script>
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
+        const preview = document.getElementById('preview');
         const captureBtn = document.getElementById('captureBtn');
+        const retakeBtn = document.getElementById('retakeBtn');
         const uploadBtn = document.getElementById('uploadBtn');
         const result = document.getElementById('result');
+        const loading = document.getElementById('loading');
         const ctx = canvas.getContext('2d');
 
         // 啟動相機
         async function startCamera() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: 'environment' }
+                    video: { 
+                        facingMode: 'environment',
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    }
                 });
                 video.srcObject = stream;
             } catch (err) {
@@ -67,28 +93,80 @@
             }
         }
 
+        // 圖片預處理
+        function preprocessImage(canvas) {
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            
+            // 轉換為灰度圖像並增加對比度
+            for (let i = 0; i < data.length; i += 4) {
+                const brightness = 0.34 * data[i] + 0.5 * data[i + 1] + 0.16 * data[i + 2];
+                const contrast = (brightness - 128) * 1.5 + 128; // 增加對比度
+                data[i] = contrast;     // R
+                data[i + 1] = contrast; // G
+                data[i + 2] = contrast; // B
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+            return canvas;
+        }
+
         // 拍照
         captureBtn.addEventListener('click', async () => {
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
             ctx.drawImage(video, 0, 0);
             
-            const imageData = canvas.toDataURL('image/png');
+            // 預處理圖片
+            preprocessImage(canvas);
+            
+            // 顯示預覽圖
+            preview.src = canvas.toDataURL('image/png');
+            preview.style.display = 'block';
+            video.style.display = 'none';
+            captureBtn.style.display = 'none';
+            retakeBtn.style.display = 'inline-block';
+            
+            loading.classList.add('active');
             result.innerHTML = '正在辨識文字，請稍候...';
             
             try {
-                const { data: { text } } = await Tesseract.recognize(
-                    imageData,
-                    'chi_tra',
-                    { logger: m => console.log(m) }
-                );
+                const worker = await Tesseract.createWorker();
+                await worker.loadLanguage('chi_tra');
+                await worker.initialize('chi_tra');
+                await worker.setParameters({
+                    tessedit_char_whitelist: '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ一二三四五六七八九十百千萬元整圓點逗號加大小熱冷甜辣酸鹹湯麵飯菜肉魚蝦蛋豆腐青菜水果咖啡茶牛豬雞鴨羊海鮮炒煮炸烤蒸煎燉燴涼拌套餐便當特餐例餐',
+                    preserve_interword_spaces: '1',
+                });
                 
-                result.innerHTML = `辨識結果：<pre>${text}</pre>`;
+                const { data: { text } } = await worker.recognize(canvas);
+                await worker.terminate();
+                
+                // 清理辨識結果
+                const cleanedText = text
+                    .replace(/[\r\n]+/g, '\n')  // 合併多個換行
+                    .replace(/[^\S\n]+/g, ' ')  // 合併多個空格
+                    .trim();
+                
+                result.innerHTML = `辨識結果：<pre>${cleanedText}</pre>`;
                 uploadBtn.disabled = false;
+                loading.classList.remove('active');
             } catch (err) {
                 console.error('OCR 辨識失敗:', err);
                 result.innerHTML = '文字辨識失敗，請重試';
+                loading.classList.remove('active');
             }
+        });
+
+        // 重新拍攝
+        retakeBtn.addEventListener('click', () => {
+            video.style.display = 'block';
+            preview.style.display = 'none';
+            captureBtn.style.display = 'inline-block';
+            retakeBtn.style.display = 'none';
+            uploadBtn.disabled = true;
+            result.innerHTML = '辨識結果將顯示在這裡...';
         });
 
         // 上傳至訂便當網站
@@ -96,7 +174,6 @@
             const recognizedText = result.querySelector('pre').textContent;
             const dinbendonUrl = 'https://dinbendon.net/do/?wicket%3Ainterface=%3A6%3A%3A';
             
-            // 開啟新分頁並將辨識文字複製到剪貼簿
             navigator.clipboard.writeText(recognizedText)
                 .then(() => {
                     window.open(dinbendonUrl, '_blank');
